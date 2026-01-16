@@ -20,7 +20,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/problems/*/submissions/*"],
+      "matches": [
+        "https://leetcode.com/problems/*/submissions/*",
+        "https://leetcode.com/submissions/detail/*"
+      ],
       "js": ["content.js"]
     }
   ],

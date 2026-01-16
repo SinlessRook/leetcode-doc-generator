@@ -381,28 +381,22 @@ async function handleCaptureFromCurrentPage() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     // Check if it's a LeetCode submission page
-    if (!tab.url || !tab.url.includes('leetcode.com/problems/') || !tab.url.includes('/submissions/')) {
+    if (!tab.url || (!tab.url.includes('leetcode.com/problems/') && !tab.url.includes('leetcode.com/submissions/detail/'))) {
       showStatus('Please navigate to a LeetCode submission page', 'error');
       return;
     }
     
-    showStatus('Checking content script...', 'success');
+    showStatus('Waiting for page to load...', 'success');
     captureButton.disabled = true;
-    
-    // First, check if content script is ready
-    const isReady = await checkContentScriptReady(tab.id);
-    if (!isReady) {
-      showStatus('Content script not responding. Please refresh the page and try again.', 'error');
-      return;
-    }
-    
-    showStatus('Capturing...', 'success');
     
     // Send message to content script to extract data
     try {
-      const response = await sendMessageToContentScript(tab.id, { type: 'EXTRACT_PROBLEM_DATA' });
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PROBLEM_DATA' });
       
       if (response && response.success) {
+        console.log('Received data from content script:', response.data);
+        console.log('Code length:', response.data.code?.length);
+        
         // Validate captured data before saving
         const validation = validateProblemData(response.data);
         if (!validation.valid) {
@@ -410,26 +404,26 @@ async function handleCaptureFromCurrentPage() {
           return;
         }
         
-        // Add problem to storage
+        // Add problem to storage (includes code)
         await addProblem(response.data);
+        console.log('Problem saved to storage with code');
         
         // Reload problems list
         await loadProblems();
         
-        showStatus('Problem captured successfully!', 'success');
+        showStatus(`Captured: ${response.data.name}`, 'success');
       } else {
         const errorMsg = response?.error || 'Failed to capture problem';
         console.error('Capture failed:', errorMsg);
         showStatus(errorMsg, 'error');
       }
     } catch (messageError) {
-      // This happens if the content script isn't loaded or can't respond
       console.error('Message error:', messageError);
-      showStatus('Error extracting data. Check the browser console for details.', 'error');
+      showStatus('Error: Content script not loaded. Please refresh the page and try again.', 'error');
     }
   } catch (error) {
     console.error('Error capturing problem:', error);
-    showStatus('Error capturing problem. Make sure you\'re on a LeetCode submission page.', 'error');
+    showStatus('Error capturing problem.', 'error');
   } finally {
     captureButton.disabled = false;
   }

@@ -15,24 +15,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // Determine message source
   const isFromContentScript = sender.tab !== undefined;
-  const isFromPopup = !isFromContentScript;
   
   // Route messages based on type and source
-  if (message.type === 'PROBLEM_DATA_EXTRACTED') {
-    // Content script has extracted data, forward to popup if needed
-    // Note: In current architecture, popup directly queries content script
-    // This handler is here for future extensibility
+  if (message.type === 'PROBLEM_DATA_EXTRACTED' && isFromContentScript) {
+    // Content script has extracted data
     console.log('Problem data extracted by content script:', message.data);
-    sendResponse({ success: true, message: 'Data received by background' });
-    return true;
+    
+    // Store temporarily in chrome.storage.local for popup to retrieve
+    chrome.storage.local.set({
+      lastExtractedProblem: message.data,
+      lastExtractedTimestamp: Date.now()
+    }, () => {
+      console.log('Stored extracted problem data');
+      sendResponse({ success: true, message: 'Data stored by background' });
+    });
+    
+    return true; // Keep message channel open for async response
   }
   
   // For other message types, allow direct communication
-  // The background script acts as a minimal coordinator
-  // Most communication happens directly between popup and content script
   console.log('Message passed through background script');
   sendResponse({ success: true, message: 'Message acknowledged by background' });
-  return true; // Keep message channel open for async responses
+  return true;
 });
 
 /**

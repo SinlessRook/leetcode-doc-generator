@@ -7,13 +7,15 @@ console.log('LeetCode Doc Generator content script loaded');
 
 /**
  * Detects if the current page is a LeetCode submission page
- * Pattern: /problems/{problem-slug}/submissions/{submission-id}/
- * Note: Only extracts from the full URL format, not from /submissions/detail/
+ * Patterns: 
+ * - /problems/{problem-slug}/submissions/{submission-id}/
+ * - /submissions/detail/{submission-id}/
  * @returns {boolean} True if on a valid submission page
  */
 function detectLeetCodeSubmissionPage() {
-  const pattern = /\/problems\/[^\/]+\/submissions\/\d+/;
-  return pattern.test(window.location.pathname);
+  const pattern1 = /\/problems\/[^\/]+\/submissions\/\d+/;
+  const pattern2 = /\/submissions\/detail\/\d+/;
+  return pattern1.test(window.location.pathname) || pattern2.test(window.location.pathname);
 }
 
 /**
@@ -61,20 +63,38 @@ function isValidCode(code) {
     /const /,
     /=>/,  // arrow function
     /\(\s*\)/,  // empty parentheses (function calls)
+    /int /,
+    /void /,
+    /string /,
+    /bool /,
+    /vector/,
+    /array/i,
+    /list/i,
+    /map/i,
+    /set/i,
   ];
   
   // If code contains at least one code pattern, it's likely valid
   const hasCodePattern = codePatterns.some(pattern => pattern.test(code));
+  
+  if (!hasCodePattern) {
+    console.warn('No code patterns found in extracted text');
+    // Don't fail validation - just warn
+    // Some valid code might not match our patterns
+  }
   
   // Check if it looks like ASCII art or garbage (lots of special characters, no letters)
   const letterCount = (code.match(/[a-zA-Z]/g) || []).length;
   const totalLength = code.length;
   const letterRatio = letterCount / totalLength;
   
-  // Real code should have at least 20% letters
-  if (letterRatio < 0.2) return false;
+  // Real code should have at least 10% letters (reduced from 20%)
+  if (letterRatio < 0.1) {
+    console.warn('Letter ratio too low:', letterRatio);
+    return false;
+  }
   
-  return hasCodePattern;
+  return true;
 }
 
 /**
@@ -146,101 +166,7 @@ function mapLanguageCode(langCode) {
   return mapping[langCode] || langCode;
 }
 
-/**
- * Fetches submission details from LeetCode GraphQL API
- * @param {string} submissionId - The submission ID to fetch
- * @returns {Promise<Object>} Submission data {code, lang, question: {title, titleSlug}}
- * @throws {Error} If API call fails with descriptive error message
- */
-async function fetchSubmissionFromAPI(submissionId) {
-  const query = `
-    query submissionDetails($submissionId: Int!) {
-      submissionDetails(submissionId: $submissionId) {
-        code
-        lang
-        question {
-          title
-          titleSlug
-        }
-      }
-    }
-  `;
-  
-  try {
-    const response = await fetch('https://leetcode.com/graphql', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: query,
-        variables: { submissionId: parseInt(submissionId) }
-      }),
-      credentials: 'include' // Include cookies for authentication
-    });
-    
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error('Authentication failed. Please make sure you are logged into LeetCode.');
-      } else if (response.status === 404) {
-        throw new Error('Submission not found. Please check the submission URL.');
-      } else if (response.status === 429) {
-        throw new Error('Too many requests. Please wait a moment and try again.');
-      } else if (response.status >= 500) {
-        throw new Error('LeetCode server error. Please try again later.');
-      } else {
-        throw new Error(`API request failed with status ${response.status}`);
-      }
-    }
-    
-    const data = await response.json();
-    
-    if (data.errors) {
-      const errorMessages = data.errors.map(e => e.message).join(', ');
-      throw new Error(`LeetCode API error: ${errorMessages}`);
-    }
-    
-    if (!data.data || !data.data.submissionDetails) {
-      throw new Error('No submission details found. The submission may not exist or you may not have access to it.');
-    }
-    
-    const submission = data.data.submissionDetails;
-    
-    // Validate that we got all required fields
-    if (!submission.code) {
-      throw new Error('Submission code is empty or unavailable.');
-    }
-    
-    if (!submission.question || !submission.question.title) {
-      throw new Error('Problem title is unavailable.');
-    }
-    
-    if (!submission.lang) {
-      throw new Error('Programming language information is unavailable.');
-    }
-    
-    return submission;
-  } catch (error) {
-    // If it's already our custom error, rethrow it
-    if (error.message.includes('Authentication') || 
-        error.message.includes('not found') || 
-        error.message.includes('Too many') ||
-        error.message.includes('server error') ||
-        error.message.includes('API error') ||
-        error.message.includes('empty') ||
-        error.message.includes('unavailable')) {
-      throw error;
-    }
-    
-    // Network or other errors
-    if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error('Network error. Please check your internet connection.');
-    }
-    
-    console.error('API fetch error:', error);
-    throw new Error(`Failed to fetch submission data: ${error.message}`);
-  }
-}
+
 
 /**
  * Fallback method: Extract submission data from DOM
@@ -278,31 +204,76 @@ async function extractFromDOM() {
       throw new Error('Could not find problem name on this page. Please make sure you are on a submission detail page.');
     }
     
-    // Try to find code block - LeetCode uses Monaco editor or CodeMirror
+    // Extract code from <code class="language-*"> element
     let code = null;
-    const codeSelectors = [
-      '.view-lines',  // Monaco editor
-      '.monaco-editor .view-lines',
-      'pre code',
-      '[class*="code-container"]',
-      '[class*="CodeMirror"]',
-      'pre',
-      '[data-mode-id]'
-    ];
+    let language = 'Unknown';
     
-    for (const selector of codeSelectors) {
-      const element = document.querySelector(selector);
-      if (element && element.textContent.trim()) {
-        code = element.textContent.trim();
-        console.log(`Found code with selector "${selector}", length:`, code.length);
+    // Look for ALL code elements with language class
+    const codeElements = document.querySelectorAll('code[class*="language-"]');
+    console.log(`Found ${codeElements.length} code elements with language class`);
+    
+    for (const codeElement of codeElements) {
+      // Extract language from class name (e.g., "language-cpp" -> "cpp")
+      const classList = codeElement.className;
+      const langMatch = classList.match(/language-(\w+)/);
+      if (langMatch && langMatch[1]) {
+        language = mapLanguageCode(langMatch[1]);
+        console.log('Found language from code element:', language);
+      }
+      
+      // Get text content directly from code element (this includes all nested spans)
+      const rawCode = codeElement.textContent || codeElement.innerText;
+      
+      if (rawCode && rawCode.trim().length > 0) {
+        const trimmedCode = rawCode.trim();
+        console.log(`Checking code element ${Array.from(codeElements).indexOf(codeElement) + 1}, length:`, trimmedCode.length);
+        console.log('Code preview:', trimmedCode.substring(0, 100));
         
-        // Validate the extracted code
-        if (isValidCode(code)) {
-          console.log('Code validation passed');
-          break;
-        } else {
-          console.log('Code validation failed, trying next selector');
-          code = null;
+        // Check if this looks like ASCII art (lots of pipes and slashes, few alphanumeric)
+        const alphanumericCount = (trimmedCode.match(/[a-zA-Z0-9]/g) || []).length;
+        const alphanumericRatio = alphanumericCount / trimmedCode.length;
+        
+        console.log('Alphanumeric ratio:', alphanumericRatio);
+        
+        // Skip if less than 30% alphanumeric (likely ASCII art)
+        if (alphanumericRatio < 0.3) {
+          console.warn('Low alphanumeric ratio, skipping this element (likely ASCII art)');
+          continue;
+        }
+        
+        // This looks like real code
+        code = trimmedCode;
+        console.log('Found valid code!');
+        break;
+      }
+    }
+    
+    // If code element approach didn't work, try other selectors
+    if (!code) {
+      const codeSelectors = [
+        '.view-lines',  // Monaco editor
+        '.monaco-editor .view-lines',
+        'pre code',
+        '[class*="code-container"]',
+        '[class*="CodeMirror"]',
+        'pre',
+        '[data-mode-id]'
+      ];
+      
+      for (const selector of codeSelectors) {
+        const element = document.querySelector(selector);
+        if (element && element.textContent.trim()) {
+          code = element.textContent.trim();
+          console.log(`Found code with selector "${selector}", length:`, code.length);
+          
+          // Validate the extracted code
+          if (isValidCode(code)) {
+            console.log('Code validation passed');
+            break;
+          } else {
+            console.log('Code validation failed, trying next selector');
+            code = null;
+          }
         }
       }
     }
@@ -311,29 +282,43 @@ async function extractFromDOM() {
       throw new Error('Could not extract valid code from this page. Please make sure the submission has loaded completely.');
     }
     
-    // Try to find language - look for language indicators
-    let language = 'Unknown';
-    const langSelectors = [
-      '[class*="lang"]',
-      '[data-language]',
-      'select[name*="lang"]',
-      '[class*="language"]',
-      '.language-label'
-    ];
+    console.log('Extracted code (first 200 chars):', code.substring(0, 200));
+    console.log('Code length:', code.length);
+    console.log('Code validation check...');
     
-    for (const selector of langSelectors) {
-      const element = document.querySelector(selector);
-      if (element) {
-        const langText = element.textContent || element.getAttribute('data-language') || element.value;
-        if (langText && isValidLanguage(langText)) {
-          language = langText.trim();
-          console.log(`Found language with selector "${selector}":`, language);
-          break;
+    // Validate the extracted code
+    if (!isValidCode(code)) {
+      console.error('Code validation failed!');
+      console.error('Code sample:', code.substring(0, 500));
+      throw new Error('Extracted code appears to be invalid or corrupted.');
+    }
+    
+    console.log('Code validation passed!');
+    
+    // If we still don't have language, try to find it from other elements
+    if (language === 'Unknown') {
+      const langSelectors = [
+        '[class*="lang"]',
+        '[data-language]',
+        'select[name*="lang"]',
+        '[class*="language"]',
+        '.language-label'
+      ];
+      
+      for (const selector of langSelectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          const langText = element.textContent || element.getAttribute('data-language') || element.value;
+          if (langText && isValidLanguage(langText)) {
+            language = langText.trim();
+            console.log(`Found language with selector "${selector}":`, language);
+            break;
+          }
         }
       }
     }
     
-    // If we couldn't find language, try to detect from code
+    // If we still couldn't find language, try to detect from code
     if (language === 'Unknown') {
       language = detectLanguageFromCode(code);
       console.log('Detected language from code:', language);
@@ -379,9 +364,9 @@ function detectLanguageFromCode(code) {
 }
 
 /**
- * Main extraction function that tries API first, then falls back to DOM scraping
+ * Main extraction function using DOM scraping only
  * @returns {Promise<Object>} Problem data {name, code, language, submissionLink}
- * @throws {Error} If both extraction methods fail with descriptive error message
+ * @throws {Error} If extraction fails with descriptive error message
  */
 async function extractProblemData() {
   const submissionId = extractSubmissionId();
@@ -390,60 +375,25 @@ async function extractProblemData() {
     throw new Error('Could not extract submission ID from URL. Please make sure you are on a submission detail page.');
   }
   
-  // Try API first
   try {
-    console.log('Attempting to fetch from API...');
-    const apiData = await fetchSubmissionFromAPI(submissionId);
+    console.log('Extracting from DOM...');
+    const domData = await extractFromDOM();
     
     // Format submission link as: /submissions/detail/{id}/
     const formattedSubmissionLink = `/submissions/detail/${submissionId}/`;
     
-    console.log('Extracted code length:', apiData.code?.length);
-    console.log('Code preview:', apiData.code?.substring(0, 100));
-    console.log('Language:', apiData.lang);
-    
-    // Validate the extracted data
-    const codeIsValid = isValidCode(apiData.code);
-    const languageIsValid = isValidLanguage(apiData.lang);
-    
-    console.log('Code validation:', codeIsValid);
-    console.log('Language validation:', languageIsValid);
-    
-    // If API data is corrupted, throw error to trigger fallback
-    if (!codeIsValid || !languageIsValid) {
-      console.warn('API returned corrupted data, will try DOM scraping');
-      throw new Error('API returned corrupted data (code or language appears invalid)');
-    }
-    
     return {
-      name: removeProblemNumberPrefix(apiData.question.title),
-      code: apiData.code,
-      language: mapLanguageCode(apiData.lang),
+      name: removeProblemNumberPrefix(domData.name),
+      code: domData.code,
+      language: domData.language,
       submissionLink: formattedSubmissionLink
     };
-  } catch (apiError) {
-    console.warn('API extraction failed, falling back to DOM scraping:', apiError.message);
+  } catch (domError) {
+    console.error('DOM extraction failed:', domError);
     
-    // Fallback to DOM scraping
-    try {
-      const domData = await extractFromDOM();
-      
-      // Format submission link as: /submissions/detail/{id}/
-      const formattedSubmissionLink = `/submissions/detail/${submissionId}/`;
-      
-      return {
-        name: removeProblemNumberPrefix(domData.name),
-        code: domData.code,
-        language: domData.language,
-        submissionLink: formattedSubmissionLink
-      };
-    } catch (domError) {
-      console.error('Both API and DOM extraction failed');
-      
-      // Provide a comprehensive error message
-      const errorMessage = `Failed to capture problem data.\n\nAPI Error: ${apiError.message}\n\nDOM Error: ${domError.message}\n\nPlease try refreshing the page or add the problem manually.`;
-      throw new Error(errorMessage);
-    }
+    // Provide a comprehensive error message
+    const errorMessage = `Failed to capture problem data.\n\nError: ${domError.message}\n\nPlease make sure the page has fully loaded and try again.`;
+    throw new Error(errorMessage);
   }
 }
 
@@ -484,7 +434,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.error('Not on a LeetCode submission page');
       sendResponse({ 
         success: false, 
-        error: 'Not on a LeetCode submission page. Please navigate to a submission page (URL pattern: /problems/*/submissions/*)' 
+        error: 'Not on a LeetCode submission page. Please navigate to a submission page.' 
       });
       return true;
     }
@@ -502,16 +452,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     console.log('Extracting problem data for submission ID:', submissionId);
     
-    // Extract problem data
-    extractProblemData()
-      .then(data => {
+    // Wait a bit for page to fully render, then extract
+    setTimeout(async () => {
+      try {
+        const data = await extractProblemData();
         console.log('Successfully extracted problem data:', data);
+        console.log('Code length:', data.code?.length);
+        console.log('Code preview:', data.code?.substring(0, 100));
         sendResponse({ success: true, data: data });
-      })
-      .catch(error => {
+      } catch (error) {
         console.error('Error extracting problem data:', error);
         sendResponse({ success: false, error: error.message });
-      });
+      }
+    }, 2000); // Wait 2 seconds for page to render
     
     return true; // Keep message channel open for async response
   }
