@@ -379,14 +379,14 @@ async function extractProblemData() {
     console.log('Extracting from DOM...');
     const domData = await extractFromDOM();
     
-    // Format submission link as: /submissions/detail/{id}/
-    const formattedSubmissionLink = `/submissions/detail/${submissionId}/`;
+    // Format submission link as full URL: https://leetcode.com/submissions/detail/{id}/
+    const fullSubmissionLink = `https://leetcode.com/submissions/detail/${submissionId}/`;
     
     return {
       name: removeProblemNumberPrefix(domData.name),
       code: domData.code,
       language: domData.language,
-      submissionLink: formattedSubmissionLink
+      submissionLink: fullSubmissionLink
     };
   } catch (domError) {
     console.error('DOM extraction failed:', domError);

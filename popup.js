@@ -129,6 +129,8 @@ async function loadProblems() {
  * Display problems list in the UI
  */
 function displayProblems() {
+  console.log('displayProblems called with', currentProblems.length, 'problems');
+  
   // Update problem count
   const count = currentProblems.length;
   problemCount.textContent = `${count} problem${count !== 1 ? 's' : ''}`;
@@ -147,9 +149,12 @@ function displayProblems() {
   
   // Display each problem
   currentProblems.forEach((problem, index) => {
+    console.log(`  ${index + 1}. ${problem.name} (${problem.language})`);
     const problemItem = createProblemItem(problem, index);
     problemsList.appendChild(problemItem);
   });
+  
+  console.log('✓ Problems displayed in UI');
 }
 
 /**
@@ -394,8 +399,11 @@ async function handleCaptureFromCurrentPage() {
       const response = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_PROBLEM_DATA' });
       
       if (response && response.success) {
-        console.log('Received data from content script:', response.data);
-        console.log('Code length:', response.data.code?.length);
+        console.log('✓ Received data from content script');
+        console.log('  - Problem name:', response.data.name);
+        console.log('  - Language:', response.data.language);
+        console.log('  - Code length:', response.data.code?.length);
+        console.log('  - Submission link:', response.data.submissionLink);
         
         // Validate captured data before saving
         const validation = validateProblemData(response.data);
@@ -403,26 +411,29 @@ async function handleCaptureFromCurrentPage() {
           showStatus(`Validation error: ${validation.error}`, 'error');
           return;
         }
+        console.log('✓ Data validation passed');
         
         // Add problem to storage (includes code)
         await addProblem(response.data);
-        console.log('Problem saved to storage with code');
+        console.log('✓ Problem saved to storage');
         
         // Reload problems list
         await loadProblems();
+        console.log('✓ Problems list reloaded');
+        console.log('  - Total problems:', currentProblems.length);
         
         showStatus(`Captured: ${response.data.name}`, 'success');
       } else {
         const errorMsg = response?.error || 'Failed to capture problem';
-        console.error('Capture failed:', errorMsg);
+        console.error('✗ Capture failed:', errorMsg);
         showStatus(errorMsg, 'error');
       }
     } catch (messageError) {
-      console.error('Message error:', messageError);
+      console.error('✗ Message error:', messageError);
       showStatus('Error: Content script not loaded. Please refresh the page and try again.', 'error');
     }
   } catch (error) {
-    console.error('Error capturing problem:', error);
+    console.error('✗ Error capturing problem:', error);
     showStatus('Error capturing problem.', 'error');
   } finally {
     captureButton.disabled = false;
@@ -563,11 +574,17 @@ async function handleDeleteProblem(id) {
   if (!confirm(`Delete "${problem.name}"?`)) return;
   
   try {
+    console.log('Deleting problem:', problem.name, 'ID:', id);
     await deleteProblem(id);
+    console.log('✓ Problem deleted from storage');
+    
     await loadProblems();
-    showStatus('Problem deleted', 'success');
+    const remaining = currentProblems.length;
+    console.log('✓ Problems list reloaded, remaining:', remaining);
+    
+    showStatus(`Deleted. ${remaining} problem${remaining !== 1 ? 's' : ''} remaining`, 'success');
   } catch (error) {
-    console.error('Error deleting problem:', error);
+    console.error('✗ Error deleting problem:', error);
     
     let errorMessage = 'Error deleting problem';
     if (error.message.includes('not found')) {
@@ -584,18 +601,25 @@ async function handleDeleteProblem(id) {
  * Handle clear all button
  */
 async function handleClearAll() {
-  if (!confirm('Delete all problems? This cannot be undone.')) return;
+  const totalCount = currentProblems.length;
+  if (!confirm(`Delete all ${totalCount} problem${totalCount !== 1 ? 's' : ''}? This cannot be undone.`)) return;
   
   try {
+    console.log('Clearing all problems, current count:', totalCount);
+    
     // Delete each problem
     for (const problem of currentProblems) {
       await deleteProblem(problem.id);
     }
     
+    console.log('✓ All problems deleted from storage');
+    
     await loadProblems();
-    showStatus('All problems cleared', 'success');
+    console.log('✓ Problems list reloaded, count:', currentProblems.length);
+    
+    showStatus(`All ${totalCount} problem${totalCount !== 1 ? 's' : ''} cleared`, 'success');
   } catch (error) {
-    console.error('Error clearing problems:', error);
+    console.error('✗ Error clearing problems:', error);
     showStatus('Error clearing problems', 'error');
   }
 }

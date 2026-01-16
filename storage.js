@@ -134,6 +134,15 @@ async function deleteProblem(id) {
   const data = await chrome.storage.local.get(STORAGE_KEY);
   const currentData = data[STORAGE_KEY] || { info: {}, problems: [] };
   
+  const problemIndex = currentData.problems.findIndex(p => p.id === id);
+  
+  if (problemIndex === -1) {
+    console.warn(`Problem with id ${id} not found in storage`);
+    // Don't throw error, just return - problem might already be deleted
+    return;
+  }
+  
+  // Remove the problem
   currentData.problems = currentData.problems.filter(p => p.id !== id);
   
   // Reorder remaining problems
@@ -142,6 +151,7 @@ async function deleteProblem(id) {
   });
   
   await chrome.storage.local.set({ [STORAGE_KEY]: currentData });
+  console.log(`Problem ${id} deleted, ${currentData.problems.length} problems remaining`);
 }
 
 /**
