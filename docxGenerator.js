@@ -60,7 +60,8 @@ function createHeader(info) {
         new TextRun({
           text: info.title,
           bold: true,
-          size: 48 // 24pt (size is in half-points)
+          size: 48, // 24pt (size is in half-points)
+          font: 'Arial'
         })
       ],
       spacing: {
@@ -75,7 +76,8 @@ function createHeader(info) {
       children: [
         new TextRun({
           text: `Submitted by: ${info.submittedBy}`,
-          size: 24 // 12pt
+          size: 24, // 12pt
+          font: 'Arial'
         })
       ],
       spacing: {
@@ -121,7 +123,8 @@ function createProblemSection(problem) {
         new TextRun({
           text: problem.name,
           bold: true,
-          size: 36 // 18pt
+          size: 36, // 18pt
+          font: 'Arial'
         })
       ],
       spacing: {
@@ -131,13 +134,22 @@ function createProblemSection(problem) {
     })
   );
   
+  // Add blank line after problem name
+  paragraphs.push(
+    new Paragraph({
+      text: '',
+      spacing: { after: 100 }
+    })
+  );
+  
   // Submission link label and URL
   paragraphs.push(
     new Paragraph({
       children: [
         new TextRun({
           text: 'Submission Link-',
-          size: 24 // 12pt
+          size: 24, // 12pt
+          font: 'Arial'
         })
       ],
       spacing: {
@@ -152,13 +164,21 @@ function createProblemSection(problem) {
         new TextRun({
           text: problem.submissionLink,
           size: 24, // 12pt
-          color: '0000FF',
-          underline: {}
+          font: 'Arial',
+          color: '000000' // Black color
         })
       ],
       spacing: {
         after: 200
       }
+    })
+  );
+  
+  // Add blank line after submission link
+  paragraphs.push(
+    new Paragraph({
+      text: '',
+      spacing: { after: 100 }
     })
   );
   
@@ -168,7 +188,8 @@ function createProblemSection(problem) {
       children: [
         new TextRun({
           text: 'Code-',
-          size: 24 // 12pt
+          size: 24, // 12pt
+          font: 'Arial'
         })
       ],
       spacing: {
