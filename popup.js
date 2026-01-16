@@ -731,6 +731,9 @@ function handleDragEnd(e) {
  * Handle start new problem set button
  */
 async function handleStartNewProblemSet() {
+  const problemCount = currentProblems.length;
+  const hasInfo = currentProblemSetInfo.title || currentProblemSetInfo.submittedBy;
+  
   // Show confirmation dialog
   const confirmed = confirm(
     'Start a new problem set?\n\n' +
@@ -742,8 +745,13 @@ async function handleStartNewProblemSet() {
   if (!confirmed) return;
   
   try {
-    // Clear all data from storage
+    console.log('Starting new problem set...');
+    console.log('  - Current problems:', problemCount);
+    console.log('  - Has problem set info:', hasInfo);
+    
+    // Clear all data from storage (problems + problem set info)
     await clearAll();
+    console.log('✓ All data cleared from storage');
     
     // Reset state
     currentProblems = [];
@@ -756,12 +764,14 @@ async function handleStartNewProblemSet() {
     problemCount.textContent = '0 problems';
     clearAllButton.style.display = 'none';
     
+    console.log('✓ UI reset complete');
+    
     // Focus on problem set title input
     problemSetTitleInput.focus();
     
-    showStatus('Started new problem set', 'success');
+    showStatus('Started new problem set - all data cleared', 'success');
   } catch (error) {
-    console.error('Error starting new problem set:', error);
+    console.error('✗ Error starting new problem set:', error);
     showStatus('Error starting new problem set', 'error');
   }
 }
