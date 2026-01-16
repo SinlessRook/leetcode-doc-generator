@@ -1,0 +1,21 @@
+{
+  "name": "leetcode-doc-generator",
+  "version": "1.0.0",
+  "description": "Chrome extension to capture LeetCode submissions and generate formatted .docx documents",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "leetcode",
+    "chrome-extension",
+    "documentation",
+    "docx"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "docx": "^8.5.0"
+  },
+  "devDependencies": {}
+}
