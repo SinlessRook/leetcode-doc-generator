@@ -62,52 +62,84 @@ function removeLineNumbers(code) {
     }
     
     // Try to match and remove line numbers at the start of the line
-    // Patterns to match (in order of specificity):
-    // - "1code" (number directly attached to code - no space)
-    // - "1 code" or "1  code" (number followed by spaces)
-    // - "1. code" or "1.  code" (number with dot followed by spaces)  
-    // - "  1  code" (leading spaces, number, spaces)
-    // - "1|code" or "1| code" (number with pipe separator)
-    // - "1:code" or "1: code" (number with colon separator)
-    // - "1\tcode" (number with tab separator)
-    
-    const lineNumberPatterns = [
-      // Pattern for "1code" - number directly attached to code (no space)
-      /^(\s*)\d+([a-zA-Z_${}().[\]].*)$/,    // "  1code" or "1}" - preserve leading spaces, extract code part
-      
-      // Pattern for "1.code" - number with dot directly attached to code
-      /^(\s*)\d+\.([a-zA-Z_${}().[\]].*)$/,  // "  1.code" or "1.function" - preserve leading spaces
-      
-      // Pattern for "1 code" - number followed by space(s)
-      /^(\s*)\d+\s+(.*)$/,                  // "  1  code" or "1 code" - preserve leading spaces
-      
-      // Pattern for "1. code" - number with dot and space
-      /^(\s*)\d+\.\s+(.*)$/,                // "  1. code" - preserve leading spaces
-      
-      // Pattern for "1|code" - number with pipe
-      /^(\s*)\d+\|\s*(.*)$/,                // "  1| code" or "1|code" - preserve leading spaces
-      
-      // Pattern for "1:code" - number with colon
-      /^(\s*)\d+:\s*(.*)$/,                 // "  1: code" or "1:code" - preserve leading spaces
-      
-      // Pattern for "1\tcode" - number with tab
-      /^(\s*)\d+\t+(.*)$/,                  // "1\tcode" - preserve leading spaces
-    ];
+    // The key insight: we need to preserve the ORIGINAL indentation that was in the code,
+    // not the spaces before the line number
     
     let cleaned = false;
-    for (const pattern of lineNumberPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        // Found a line number pattern
-        // match[1] = leading whitespace (indentation to preserve)
-        // match[2] = code part after line number
-        const leadingSpaces = match[1] || '';
-        const codePart = match[2] || '';
+    
+    // Pattern 1: "1 code" or "1  code" or "1     code" (number followed by spaces and code)
+    // We need to detect the original indentation by analyzing the spaces after the number
+    const spacePattern = /^(\s*)\d+(\s+)(.*)$/;
+    const spaceMatch = line.match(spacePattern);
+    if (spaceMatch) {
+      const leadingSpaces = spaceMatch[1] || '';  // Spaces before line number
+      const spacesAfterNumber = spaceMatch[2] || '';  // Spaces after line number
+      const codePart = spaceMatch[3] || '';  // The actual code
+      
+      // The original indentation is likely the spaces after the number minus one space
+      // (since there's usually at least one space separating the number from code)
+      let originalIndentation = '';
+      if (spacesAfterNumber.length > 1) {
+        // If there are multiple spaces, the extra spaces are likely original indentation
+        originalIndentation = spacesAfterNumber.substring(1);
+      }
+      
+      // Reconstruct with leading spaces (if any) + original indentation + code
+      const reconstructed = leadingSpaces + originalIndentation + codePart;
+      cleanedLines.push(reconstructed);
+      cleaned = true;
+    }
+    
+    // Pattern 2: "1.code" or "1. code" (number with dot)
+    if (!cleaned) {
+      const dotPattern = /^(\s*)\d+\.(\s*)(.*)$/;
+      const dotMatch = line.match(dotPattern);
+      if (dotMatch) {
+        const leadingSpaces = dotMatch[1] || '';
+        const spacesAfterDot = dotMatch[2] || '';
+        const codePart = dotMatch[3] || '';
         
-        // Reconstruct line with preserved indentation
-        cleanedLines.push(leadingSpaces + codePart);
+        // For dot pattern, preserve any spaces after the dot as indentation
+        const reconstructed = leadingSpaces + spacesAfterDot + codePart;
+        cleanedLines.push(reconstructed);
         cleaned = true;
-        break;
+      }
+    }
+    
+    // Pattern 3: "1code" (number directly attached to code)
+    if (!cleaned) {
+      const attachedPattern = /^(\s*)\d+([a-zA-Z_${}().[\]].*)$/;
+      const attachedMatch = line.match(attachedPattern);
+      if (attachedMatch) {
+        const leadingSpaces = attachedMatch[1] || '';
+        const codePart = attachedMatch[2] || '';
+        
+        const reconstructed = leadingSpaces + codePart;
+        cleanedLines.push(reconstructed);
+        cleaned = true;
+      }
+    }
+    
+    // Pattern 4: Other separators (|, :, tab)
+    if (!cleaned) {
+      const separatorPatterns = [
+        /^(\s*)\d+\|(\s*)(.*)$/,  // "1|code" or "1| code"
+        /^(\s*)\d+:(\s*)(.*)$/,   // "1:code" or "1: code"
+        /^(\s*)\d+\t+(.*)$/,      // "1\tcode"
+      ];
+      
+      for (const pattern of separatorPatterns) {
+        const match = line.match(pattern);
+        if (match) {
+          const leadingSpaces = match[1] || '';
+          const spacesAfterSeparator = match[2] || '';
+          const codePart = match[3] || match[2] || ''; // Handle tab case
+          
+          const reconstructed = leadingSpaces + spacesAfterSeparator + codePart;
+          cleanedLines.push(reconstructed);
+          cleaned = true;
+          break;
+        }
       }
     }
     
